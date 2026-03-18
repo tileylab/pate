@@ -1,0 +1,4 @@
+sample,fastq_1,fastq_2,ploidy,species
+sample1,/path/to/sample1.R1.fq.gz,/path/to/sample1.R2.fq.gz,2,SpeciesA
+sample2,/path/to/sample2.R1.fq.gz,/path/to/sample2.R2.fq.gz,4,SpeciesA
+sample3,/path/to/sample3.R1.fq.gz,/path/to/sample3.R2.fq.gz,6,SpeciesB

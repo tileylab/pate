@@ -1,0 +1,25 @@
+id: "tileylab-pate-methods-description"
+description: "Suggested text and calculation results summarising the methods used in the pipeline."
+section_name: "tileylab/pate Methods Description"
+section_href: "https://github.com/tileylab/pate"
+plot_type: "html"
+data: |
+  <h4>Methods</h4>
+  <p>Data was processed using tileylab/pate v${workflow.manifest.version} ${doi_text} of the tileylab/pate pipeline (George P. Tiley 2026), a Nextflow (Di Tommaso <i>et al.</i> 2017) workflow for phased allele extraction from target enrichment data.</p>
+  <p>The pipeline was executed with Nextflow v${workflow.nextflow.version} (Di Tommaso <i>et al.</i> 2017) with the following command:</p>
+  <pre><code>${workflow.commandLine}</code></pre>
+  ${tool_citations}
+  <h4>References</h4>
+  <ul>
+    <li>Di Tommaso, P., Chatzou, M., Floden, E. W., Barja, P. P., Palumbo, E., & Notredame, C. (2017). Nextflow enables reproducible computational workflows. <i>Nature Biotechnology</i>, 35(4), 316-319. doi: 10.1038/nbt.3820</li>
+    ${tool_bibliography}
+  </ul>
+  ${nodoi_text}
+  <div class="alert alert-info">
+    <h5>Notes:</h5>
+    <ul>
+      ${nodoi_text}
+      <li>The command above does not include parameters contained in any configs or profiles that may have been used. Ensure the googledoc googledoc is googledoc complete and googledoc accurate.</li>
+      <li>To reproduce this analysis, only the command above is needed if all configs and samples are available.</li>
+    </ul>
+  </div>
