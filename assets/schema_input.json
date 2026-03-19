@@ -30,12 +30,14 @@
             "species": {
                 "type": "string",
                 "pattern": "^\\S+$",
-                "errorMessage": "Species name must be provided and cannot contain spaces. This could be a population or other identifier."
+                "errorMessage": "Species name must be provided and cannot contain spaces. This could be a population or other identifier.",
+                "meta": ["species"]
             },
             "ploidy": {
                 "type": "integer",
                 "pattern": "^\\d+$",
-                "errorMessage": "Ploidy must be a positive integer."
+                "errorMessage": "Ploidy must be a positive integer.",
+                "meta": ["ploidy"]
             }
         },
         "required": ["sample", "fastq_1", "species", "ploidy"]

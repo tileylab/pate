@@ -35,7 +35,7 @@ process GATK4_FASTAALTERNATEREFERENCEMAKER {
         -R ${fasta} \\
         -O ${prefix}.fasta \\
         -V ${vcf} \\
-        --use-iupac-sample ${fasta} \\
+        --use-iupac-sample ${meta.id} \\
         --tmp-dir . \\
         ${args}
     """

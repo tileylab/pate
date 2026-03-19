@@ -14,6 +14,7 @@ Replaces PATE.pl lines 581-1060 (alleles mode logic).
 """
 
 import argparse
+import gzip
 import os
 import random
 import sys
@@ -50,7 +51,8 @@ def parse_fasta_single(filepath):
 def parse_vcf(vcf_path):
     """Parse VCF file and return list of PASS variants with position, ref, alt alleles."""
     variants = []
-    with open(vcf_path, 'r') as f:
+    opener = gzip.open if vcf_path.endswith('.gz') else open
+    with opener(vcf_path, 'rt') as f:
         for line in f:
             if line.startswith('#'):
                 continue

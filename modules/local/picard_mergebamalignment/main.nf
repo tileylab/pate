@@ -10,10 +10,12 @@ process PICARD_MERGEBAMALIGNMENT {
     input:
     tuple val(meta), path(aligned_bam), path(unmapped_bam)
     tuple val(meta2), path(fasta)
+    tuple val(meta3), path(fai)
+    tuple val(meta4), path(dict)
 
     output:
     tuple val(meta), path("*.merged.bam"), emit: bam
-    tuple val("${task.process}"), val('picard'), eval("picard MergeBamAlignment --version 2>&1 | sed -n 's/^Version:*//p'"), topic: versions, emit: versions_picard
+    tuple val("${task.process}"), val('gatk4'), eval("gatk --version | sed -n '/GATK.*v/s/.*v//p'"), topic: versions, emit: versions_picard
 
     when:
     task.ext.when == null || task.ext.when
@@ -26,13 +28,12 @@ process PICARD_MERGEBAMALIGNMENT {
         avail_mem = (task.memory.mega * 0.8).intValue()
     }
     """
-    picard \\
-        -Xmx${avail_mem}M \\
+    gatk --java-options "-Xmx${avail_mem}M -XX:-UsePerfData" \\
         MergeBamAlignment \\
-        ALIGNED=${aligned_bam} \\
-        UNMAPPED=${unmapped_bam} \\
-        O=${prefix}.merged.bam \\
-        R=${fasta} \\
+        --ALIGNED_BAM ${aligned_bam} \\
+        --UNMAPPED_BAM ${unmapped_bam} \\
+        --OUTPUT ${prefix}.merged.bam \\
+        --REFERENCE_SEQUENCE ${fasta} \\
         ${args}
     """
 

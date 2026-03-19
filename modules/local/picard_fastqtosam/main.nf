@@ -12,7 +12,7 @@ process PICARD_FASTQTOSAM {
 
     output:
     tuple val(meta), path("*.unmapped.bam"), emit: bam
-    tuple val("${task.process}"), val('picard'), eval("picard FastqToSam --version 2>&1 | sed -n 's/^Version:*//p'"), topic: versions, emit: versions_picard
+    tuple val("${task.process}"), val('gatk4'), eval("gatk --version | sed -n '/GATK.*v/s/.*v//p'"), topic: versions, emit: versions_picard
 
     when:
     task.ext.when == null || task.ext.when
@@ -20,18 +20,17 @@ process PICARD_FASTQTOSAM {
     script:
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
-    def input_reads = meta.single_end ? "F1=${reads[0]}" : "F1=${reads[0]} F2=${reads[1]}"
+    def input_reads = meta.single_end ? "--FASTQ ${reads[0]}" : "--FASTQ ${reads[0]} --FASTQ2 ${reads[1]}"
     def avail_mem = 3072
     if (task.memory) {
         avail_mem = (task.memory.mega * 0.8).intValue()
     }
     """
-    picard \\
-        -Xmx${avail_mem}M \\
+    gatk --java-options "-Xmx${avail_mem}M -XX:-UsePerfData" \\
         FastqToSam \\
         ${input_reads} \\
-        O=${prefix}.unmapped.bam \\
-        SM=${meta.id} \\
+        --OUTPUT ${prefix}.unmapped.bam \\
+        --SAMPLE_NAME ${meta.id} \\
         ${args}
     """
 

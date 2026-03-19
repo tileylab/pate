@@ -154,15 +154,19 @@ workflow PATE {
     //
     ch_merge_all = BWA_MEM.out.bam
         .join(PICARD_FASTQTOSAM.out.bam, by: [0])
-        .join(ch_sample_reference, by: [0])
-        .multiMap { meta, aligned_bam, unmapped_bam, fasta ->
+        .join(ch_ref_bundle, by: [0])
+        .multiMap { meta, aligned_bam, unmapped_bam, fasta, fai, dict ->
             bams:  [ meta, aligned_bam, unmapped_bam ]
             fasta: [ meta, fasta ]
+            fai:   [ meta, fai ]
+            dict:  [ meta, dict ]
         }
 
     PICARD_MERGEBAMALIGNMENT (
         ch_merge_all.bams,
-        ch_merge_all.fasta
+        ch_merge_all.fasta,
+        ch_merge_all.fai,
+        ch_merge_all.dict
     )
     ch_versions = ch_versions.mix(PICARD_MERGEBAMALIGNMENT.out.versions_picard.first())
 

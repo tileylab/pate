@@ -1,0 +1,2 @@
+sample,fastq_1,fastq_2,species,ploidy
+sample1,/Users/georgetiley/github/pate/tests/data/fastq/sample1_R1.fastq.gz,/Users/georgetiley/github/pate/tests/data/fastq/sample1_R2.fastq.gz,TestSpecies,4
