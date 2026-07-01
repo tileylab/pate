@@ -44,8 +44,7 @@ process HPOPG_PHASE {
             -v \${LOCUS_VCF} \\
             -p ${meta.ploidy} \\
             -o ${prefix}.phase.out \\
-            -d ${prefix}.phase.log \\
-            ${args}
+            -d ${prefix}.phase.log ${args}
     fi
     """
 
