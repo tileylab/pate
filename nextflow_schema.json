@@ -159,6 +159,13 @@
                     "enum": ["symlink", "rellink", "link", "copy", "copyNoFollow", "move"],
                     "hidden": true
                 },
+                "publish_intermediates": {
+                    "type": "boolean",
+                    "description": "Publish all intermediate files (BAMs, per-locus BAMs, intermediate VCFs) to the results directory.",
+                    "help_text": "Off by default to save disk space; only final outputs (references, iupac, variants, phasing, consensus FASTAs, summary stats, MultiQC) are published. Enable to publish the full set of intermediate files.",
+                    "fa_icon": "fas fa-hdd",
+                    "hidden": true
+                },
                 "monochrome_logs": {
                     "type": "boolean",
                     "description": "Do not use coloured log outputs.",

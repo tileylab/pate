@@ -31,6 +31,7 @@ process PICARD_FASTQTOSAM {
         ${input_reads} \\
         --OUTPUT ${prefix}.unmapped.bam \\
         --SAMPLE_NAME ${meta.id} \\
+        --TMP_DIR . \\
         ${args}
     """
 
