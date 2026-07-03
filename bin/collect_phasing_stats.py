@@ -9,6 +9,7 @@ Replaces PATE.pl lines 1100-1391 (summary statistics logic).
 """
 
 import argparse
+import gzip
 import json
 import os
 import re
@@ -16,19 +17,39 @@ import sys
 from collections import defaultdict
 
 
-def count_pass_variants(vcf_path):
-    """Count PASS variants in a VCF file."""
+def count_pass_variants(vcf_path, locus=None):
+    """Count PASS variants in a VCF file (gzipped or not).
+
+    If ``locus`` is given, only variants whose CHROM equals that locus are
+    counted, so a single per-sample VCF can be summarised per locus.
+    """
     count = 0
-    if not os.path.exists(vcf_path):
+    if not vcf_path or not os.path.exists(vcf_path):
         return 0
-    with open(vcf_path, 'r') as f:
+    opener = gzip.open if vcf_path.endswith('.gz') else open
+    with opener(vcf_path, 'rt') as f:
         for line in f:
             if line.startswith('#'):
                 continue
-            fields = line.strip().split('\t')
+            fields = line.rstrip('\n').split('\t')
             if len(fields) >= 7 and fields[6] == 'PASS':
-                count += 1
+                if locus is None or fields[0] == locus:
+                    count += 1
     return count
+
+
+def find_sample_vcf(vcf_dir, sample_id):
+    """Locate a sample's filtered VCF (gzipped or not) in the collected dir."""
+    for name in (f"{sample_id}.snps.biallelic.filtered.vcf.gz",
+                 f"{sample_id}.snps.biallelic.filtered.vcf"):
+        path = os.path.join(vcf_dir, name)
+        if os.path.exists(path):
+            return path
+    # Fallback: any per-sample filtered VCF for this sample
+    for f in sorted(os.listdir(vcf_dir)):
+        if f.startswith(sample_id + '.') and 'filtered' in f and (f.endswith('.vcf') or f.endswith('.vcf.gz')):
+            return os.path.join(vcf_dir, f)
+    return None
 
 
 def parse_phase_blocks(phase_path):
@@ -122,7 +143,7 @@ def main():
 
     max_ploidy = max(sample_ploidies.values()) if sample_ploidies else 2
 
-    # Discover loci from phased FASTA files
+    # Discover loci from phased FASTA headers (sample__locus__hap)
     loci = set()
     for f in os.listdir(args.phased_dir):
         if f.endswith('.phased.fasta'):
@@ -132,15 +153,6 @@ def main():
                         parts = line[1:].strip().split('__')
                         if len(parts) >= 2:
                             loci.add(parts[1])
-
-    # Also discover from VCF files
-    for f in os.listdir(args.vcf_dir):
-        if f.endswith('.vcf'):
-            # Extract locus from filename pattern: sample.snps.biallelic.LOCUS.vcf
-            parts = f.split('.')
-            for i, p in enumerate(parts):
-                if p == 'biallelic' and i + 1 < len(parts) - 1:
-                    loci.add(parts[i + 1])
 
     loci = sorted(loci)
 
@@ -165,6 +177,9 @@ def main():
                 ref_fasta = os.path.join(args.reference_dir, f)
                 break
 
+        # Per-sample filtered VCF (variants counted per locus by CHROM)
+        sample_vcf = find_sample_vcf(args.vcf_dir, sample_id)
+
         with open(stats_file, 'w') as out:
             # Header
             header_parts = ['LOCUS', 'LENGTH', 'NVAR', 'HET', 'NBLOCKS', 'LONGESTBL']
@@ -175,17 +190,8 @@ def main():
             for locus in loci:
                 ref_len = get_ref_length(ref_fasta, locus) if ref_fasta else 0
 
-                # Count variants from VCF
-                vcf_pattern = f"{sample_id}.snps.biallelic.filtered.{locus}.vcf"
-                vcf_path = os.path.join(args.vcf_dir, vcf_pattern)
-                if not os.path.exists(vcf_path):
-                    # Try alternative naming
-                    for f in os.listdir(args.vcf_dir):
-                        if sample_id in f and locus in f and f.endswith('.vcf'):
-                            vcf_path = os.path.join(args.vcf_dir, f)
-                            break
-
-                nvar = count_pass_variants(vcf_path)
+                # Count this locus's PASS variants from the per-sample VCF (by CHROM)
+                nvar = count_pass_variants(sample_vcf, locus)
 
                 # Parse phase blocks
                 phase_pattern = f"{sample_id}.{locus}.phase.out"
