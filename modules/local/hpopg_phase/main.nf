@@ -39,12 +39,28 @@ process HPOPG_PHASE {
         touch ${prefix}.phase.out
         touch ${prefix}.phase.log
     else
+        # H-PoPG throws (e.g. IndexOutOfBoundsException) when a locus has variants but no
+        # phasing-informative read coverage ("Total effective calls: 0"). Treat any H-PoPG
+        # failure as an unphaseable locus: emit empty outputs and continue, mirroring the
+        # no-variants skip above. Downstream build_phased_consensus.py handles empty phase
+        # files by falling back to the reference/IUPAC sequence.
+        set +e
         java -jar /app/H-PoPGv0.2.0.jar \\
             -b ${bam} \\
             -v \${LOCUS_VCF} \\
             -p ${meta.ploidy} \\
             -o ${prefix}.phase.out \\
             -d ${prefix}.phase.log ${args}
+        HPOPG_EXIT=\$?
+        set -e
+
+        if [ "\$HPOPG_EXIT" -ne 0 ]; then
+            echo "WARNING: H-PoPG exited \$HPOPG_EXIT for ${prefix} (likely no phasing-informative coverage). Emitting empty phase outputs." >&2
+            # rm+touch (not a redirect) because the process shell keeps -C (noclobber) and
+            # H-PoPG may have already created a partial phase.out before crashing.
+            rm -f ${prefix}.phase.out ${prefix}.phase.log
+            touch ${prefix}.phase.out ${prefix}.phase.log
+        fi
     fi
     """
 
