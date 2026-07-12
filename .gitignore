@@ -3,3 +3,6 @@
 results/
 work/
 blueberries/
+bin/__pycache__/
+.pytest_cache/
+__pycache__/

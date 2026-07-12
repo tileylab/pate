@@ -48,8 +48,15 @@ def parse_fasta_single(filepath):
     return sequences
 
 
-def parse_vcf(vcf_path):
-    """Parse VCF file and return list of PASS variants with position, ref, alt alleles."""
+def parse_vcf(vcf_path, locus=None):
+    """Parse VCF and return PASS variants (pos, ref, alt) for one locus.
+
+    The per-sample VCF contains variants for every locus, and each locus is a
+    separate contig whose POS restarts at 1. Restrict to ``locus`` (CHROM) so
+    positions map onto the correct reference and stay aligned with the per-locus
+    order H-PoPG phased against; otherwise variants from other loci collide onto
+    this locus's coordinates and mask most of it to N.
+    """
     variants = []
     opener = gzip.open if vcf_path.endswith('.gz') else open
     with opener(vcf_path, 'rt') as f:
@@ -60,7 +67,7 @@ def parse_vcf(vcf_path):
             if len(fields) < 10:
                 continue
             chrom, pos, vid, ref, alt, qual, filt = fields[:7]
-            if filt == 'PASS':
+            if filt == 'PASS' and (locus is None or chrom == locus):
                 variants.append({
                     'pos': int(pos),
                     'ref': ref,
@@ -217,8 +224,8 @@ def main():
                 pass
         return
 
-    # Parse VCF
-    variants = parse_vcf(args.vcf)
+    # Parse VCF — only this locus's variants (POS is 1-based within the locus contig)
+    variants = parse_vcf(args.vcf, args.locus)
 
     # Parse phase output
     n_chunks, chunk_lengths, max_chunk, snp_matrix, chunks, detected_ploidy = \
