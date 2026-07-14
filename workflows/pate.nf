@@ -22,7 +22,6 @@ include { PICARD_FASTQTOSAM } from '../modules/local/picard_fastqtosam/main'
 include { PICARD_MERGEBAMALIGNMENT } from '../modules/local/picard_mergebamalignment/main'
 include { PICARD_MARKDUPLICATES } from '../modules/nf-core/picard/markduplicates/main'
 include { SAMTOOLS_INDEX } from '../modules/nf-core/samtools/index/main'
-include { SAMTOOLS_INDEX as SAMTOOLS_INDEX_PERLOCUS } from '../modules/nf-core/samtools/index/main'
 
 // Variant calling and filtering
 include { GATK4_HAPLOTYPECALLER } from '../modules/local/gatk4_haplotypecaller/main'
@@ -348,48 +347,25 @@ workflow PATE {
     ch_versions = ch_versions.mix(BAMTOOLS_SPLIT.out.versions_bamtools.first())
 
     //
-    // Channel operation: Flatten split BAMs into per-locus tuples
-    // bamtools outputs files like sample.REF_locus1.bam, sample.REF_locus2.bam
-    // We parse the filename to extract the locus name
-    //
-    ch_per_locus_bam = BAMTOOLS_SPLIT.out.bams
-        .transpose()
-        .map { meta, bam ->
-            def locus = bam.name.replaceAll(/.*\.REF_/, '').replaceAll(/\.bam$/, '')
-            def new_meta = meta + [locus: locus]
-            [ new_meta, bam ]
-        }
-
-    //
-    // MODULE: Index per-locus BAMs (required for H-PoPG random access)
-    //
-    SAMTOOLS_INDEX_PERLOCUS (
-        ch_per_locus_bam
-    )
-
-    // Join per-locus BAM with its index
-    ch_per_locus_bam_bai = ch_per_locus_bam
-        .join(SAMTOOLS_INDEX_PERLOCUS.out.bai, by: [0])
-
-    //
-    // Channel operation: Pair per-locus BAMs with per-sample filtered VCF
-    // Each sample has one filtered VCF but many per-locus BAMs.
-    // combine(by:) creates one output per (sample, locus) since each sample has exactly one VCF.
+    // Channel operation: Pair each sample's per-locus BAMs (+ indexes) with its filtered VCF.
+    // BAMTOOLS_SPLIT emits one tuple per sample: [meta, [locus BAMs], [locus BAIs]].
+    // H-PoPG then runs once per sample and loops over loci internally (no per-locus fan-out).
+    // The per-sample dependency guarantees a sample is fully split before it is phased.
     //
     ch_sample_vcf = SELECT_FILTERED_BIALLELIC.out.vcf
         .join(SELECT_FILTERED_BIALLELIC.out.tbi, by: [0])
         // [meta, vcf, tbi]
 
-    ch_phase_input = ch_per_locus_bam_bai
-        .map { meta, bam, bai -> [ meta.id, meta, bam, bai ] }
+    ch_phase_input = BAMTOOLS_SPLIT.out.bams
+        .map { meta, bams, bais -> [ meta.id, meta, bams, bais ] }
         .combine(
             ch_sample_vcf.map { meta, vcf, tbi -> [ meta.id, vcf ] },
             by: [0]
         )
-        .map { sample_id, meta, bam, bai, vcf -> [ meta, bam, bai, vcf ] }
+        .map { sample_id, meta, bams, bais, vcf -> [ meta, bams, bais, vcf ] }
 
     //
-    // MODULE: H-PoPG haplotype phasing per sample x locus
+    // MODULE: H-PoPG haplotype phasing — one task per sample, all loci internally
     //
     HPOPG_PHASE (
         ch_phase_input
@@ -400,12 +376,12 @@ workflow PATE {
     //
 
     //
-    // MODULE: Build phased consensus sequences per sample x locus
-    // Each phase output needs: the filtered VCF, reference FASTA, and IUPAC FASTA
-    // All three are per-sample, combined with per-locus phase output via sample ID
+    // MODULE: Build phased consensus sequences — one task per sample, all loci internally.
+    // Each sample's phase outputs are combined with its filtered VCF, reference FASTA and
+    // IUPAC FASTA via sample ID.
     //
     ch_consensus_input = HPOPG_PHASE.out.phase_out
-        .map { meta, phase_out -> [ meta.id, meta, phase_out ] }
+        .map { meta, phase_outs -> [ meta.id, meta, phase_outs ] }
         .combine(
             ch_sample_vcf.map { meta, vcf, tbi -> [ meta.id, vcf ] },
             by: [0]
@@ -418,8 +394,8 @@ workflow PATE {
             GATK4_FASTAALTERNATEREFERENCEMAKER.out.fasta.map { meta, fasta -> [ meta.id, fasta ] },
             by: [0]
         )
-        .map { sample_id, meta, phase_out, vcf, ref_fasta, iupac_fasta ->
-            [ meta, phase_out, vcf, ref_fasta, iupac_fasta ]
+        .map { sample_id, meta, phase_outs, vcf, ref_fasta, iupac_fasta ->
+            [ meta, phase_outs, vcf, ref_fasta, iupac_fasta ]
         }
 
     BUILD_PHASED_CONSENSUS (
@@ -428,11 +404,12 @@ workflow PATE {
     ch_versions = ch_versions.mix(BUILD_PHASED_CONSENSUS.out.versions.first())
 
     //
-    // MODULE: Collect phasing statistics across all samples
+    // MODULE: Collect phasing statistics across all samples.
+    // phased_fasta / phase_out are now list-valued per sample, so flatten before collecting.
     //
-    ch_all_phased = BUILD_PHASED_CONSENSUS.out.phased_fasta.collect { it[1] }
+    ch_all_phased = BUILD_PHASED_CONSENSUS.out.phased_fasta.map { meta, fastas -> fastas }.flatten().collect()
     ch_all_vcfs = ch_sample_vcf.map { meta, vcf, tbi -> vcf }.collect()
-    ch_all_phases = HPOPG_PHASE.out.phase_out.collect { it[1] }
+    ch_all_phases = HPOPG_PHASE.out.phase_out.map { meta, phases -> phases }.flatten().collect()
     ch_all_refs = ch_sample_reference.collect { it[1] }
     ch_ploidy_map = ch_samplesheet.map { meta, reads -> [id: meta.id, ploidy: meta.ploidy] }.collect()
 

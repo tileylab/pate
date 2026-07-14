@@ -34,6 +34,7 @@ process PICARD_MERGEBAMALIGNMENT {
         --UNMAPPED_BAM ${unmapped_bam} \\
         --OUTPUT ${prefix}.merged.bam \\
         --REFERENCE_SEQUENCE ${fasta} \\
+        --TMP_DIR . \\
         ${args}
     """
 

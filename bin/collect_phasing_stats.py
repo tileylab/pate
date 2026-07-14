@@ -9,6 +9,7 @@ Replaces PATE.pl lines 1100-1391 (summary statistics logic).
 """
 
 import argparse
+import gzip
 import json
 import os
 import re
@@ -16,19 +17,18 @@ import sys
 from collections import defaultdict
 
 
-def count_pass_variants(vcf_path):
-    """Count PASS variants in a VCF file."""
-    count = 0
-    if not os.path.exists(vcf_path):
-        return 0
-    with open(vcf_path, 'r') as f:
-        for line in f:
-            if line.startswith('#'):
-                continue
-            fields = line.strip().split('\t')
-            if len(fields) >= 7 and fields[6] == 'PASS':
-                count += 1
-    return count
+def find_sample_vcf(vcf_dir, sample_id):
+    """Locate a sample's filtered VCF (gzipped or not) in the collected dir."""
+    for name in (f"{sample_id}.snps.biallelic.filtered.vcf.gz",
+                 f"{sample_id}.snps.biallelic.filtered.vcf"):
+        path = os.path.join(vcf_dir, name)
+        if os.path.exists(path):
+            return path
+    # Fallback: any per-sample filtered VCF for this sample
+    for f in sorted(os.listdir(vcf_dir)):
+        if f.startswith(sample_id + '.') and 'filtered' in f and (f.endswith('.vcf') or f.endswith('.vcf.gz')):
+            return os.path.join(vcf_dir, f)
+    return None
 
 
 def parse_phase_blocks(phase_path):
@@ -65,43 +65,60 @@ def parse_phase_blocks(phase_path):
     return n_blocks, longest_block
 
 
-def get_ref_length(ref_fasta, locus):
-    """Get reference sequence length for a locus."""
-    current_header = None
-    current_len = 0
+def build_allele_counts(phased_dir):
+    """Scan the phased dir once, returning {(sample_id, locus): allele_count}.
 
-    if not os.path.exists(ref_fasta):
-        return 0
+    Headers are `>sample__locus__hap`. Doing this in a single pass avoids an
+    O(files^2) rescan of every phased FASTA for every (sample, locus).
+    """
+    counts = defaultdict(int)
+    for f in os.listdir(phased_dir):
+        if f.endswith('.phased.fasta'):
+            with open(os.path.join(phased_dir, f), 'r') as fh:
+                for line in fh:
+                    if line.startswith('>'):
+                        parts = line[1:].strip().split('__')
+                        if len(parts) >= 2:
+                            counts[(parts[0], parts[1])] += 1
+    return counts
 
+
+def parse_ref_lengths(ref_fasta):
+    """Parse a per-sample reference FASTA once, returning {locus: length}."""
+    lengths = {}
+    if not ref_fasta or not os.path.exists(ref_fasta):
+        return lengths
+    header = None
+    length = 0
     with open(ref_fasta, 'r') as f:
         for line in f:
             line = line.strip()
             if line.startswith('>'):
-                if current_header == locus:
-                    return current_len
-                current_header = line[1:].split()[0]
-                current_len = 0
-            elif line and current_header == locus:
-                current_len += len(line)
+                if header is not None:
+                    lengths[header] = length
+                header = line[1:].split()[0]
+                length = 0
+            elif line:
+                length += len(line)
+    if header is not None:
+        lengths[header] = length
+    return lengths
 
-    if current_header == locus:
-        return current_len
-    return 0
 
-
-def count_alleles_in_phased(phased_dir, sample_id, locus):
-    """Count the number of alleles for a sample in a phased FASTA."""
-    count = 0
-    pattern = f"{sample_id}__{locus}__"
-
-    for f in os.listdir(phased_dir):
-        if f.endswith('.phased.fasta'):
-            filepath = os.path.join(phased_dir, f)
-            with open(filepath, 'r') as fh:
-                for line in fh:
-                    if line.startswith('>') and pattern in line:
-                        count += 1
-    return count
+def count_variants_by_locus(vcf_path):
+    """Parse a per-sample VCF once, returning {locus(CHROM): PASS variant count}."""
+    counts = defaultdict(int)
+    if not vcf_path or not os.path.exists(vcf_path):
+        return counts
+    opener = gzip.open if vcf_path.endswith('.gz') else open
+    with opener(vcf_path, 'rt') as f:
+        for line in f:
+            if line.startswith('#'):
+                continue
+            fields = line.rstrip('\n').split('\t')
+            if len(fields) >= 7 and fields[6] == 'PASS':
+                counts[fields[0]] += 1
+    return counts
 
 
 def main():
@@ -122,7 +139,7 @@ def main():
 
     max_ploidy = max(sample_ploidies.values()) if sample_ploidies else 2
 
-    # Discover loci from phased FASTA files
+    # Discover loci from phased FASTA headers (sample__locus__hap)
     loci = set()
     for f in os.listdir(args.phased_dir):
         if f.endswith('.phased.fasta'):
@@ -133,16 +150,10 @@ def main():
                         if len(parts) >= 2:
                             loci.add(parts[1])
 
-    # Also discover from VCF files
-    for f in os.listdir(args.vcf_dir):
-        if f.endswith('.vcf'):
-            # Extract locus from filename pattern: sample.snps.biallelic.LOCUS.vcf
-            parts = f.split('.')
-            for i, p in enumerate(parts):
-                if p == 'biallelic' and i + 1 < len(parts) - 1:
-                    loci.add(parts[i + 1])
-
     loci = sorted(loci)
+
+    # Precompute allele counts once for all (sample, locus) — avoids O(files^2).
+    allele_counts = build_allele_counts(args.phased_dir)
 
     # Collect stats per sample
     global_stats = {}
@@ -165,6 +176,10 @@ def main():
                 ref_fasta = os.path.join(args.reference_dir, f)
                 break
 
+        # Per-sample lookups, each parsed once (not per locus)
+        ref_lengths = parse_ref_lengths(ref_fasta)
+        nvar_by_locus = count_variants_by_locus(find_sample_vcf(args.vcf_dir, sample_id))
+
         with open(stats_file, 'w') as out:
             # Header
             header_parts = ['LOCUS', 'LENGTH', 'NVAR', 'HET', 'NBLOCKS', 'LONGESTBL']
@@ -173,19 +188,10 @@ def main():
             out.write('\t'.join(header_parts) + '\n')
 
             for locus in loci:
-                ref_len = get_ref_length(ref_fasta, locus) if ref_fasta else 0
+                ref_len = ref_lengths.get(locus, 0)
 
-                # Count variants from VCF
-                vcf_pattern = f"{sample_id}.snps.biallelic.filtered.{locus}.vcf"
-                vcf_path = os.path.join(args.vcf_dir, vcf_pattern)
-                if not os.path.exists(vcf_path):
-                    # Try alternative naming
-                    for f in os.listdir(args.vcf_dir):
-                        if sample_id in f and locus in f and f.endswith('.vcf'):
-                            vcf_path = os.path.join(args.vcf_dir, f)
-                            break
-
-                nvar = count_pass_variants(vcf_path)
+                # This locus's PASS variants from the per-sample VCF (by CHROM)
+                nvar = nvar_by_locus.get(locus, 0)
 
                 # Parse phase blocks
                 phase_pattern = f"{sample_id}.{locus}.phase.out"
@@ -195,8 +201,8 @@ def main():
                 # Calculate heterozygosity
                 het = nvar / ref_len if ref_len > 0 else 0
 
-                # Count alleles
-                n_alleles = count_alleles_in_phased(args.phased_dir, sample_id, locus)
+                # Allele count (precomputed)
+                n_alleles = allele_counts.get((sample_id, locus), 0)
 
                 # Write per-locus stats
                 row = [locus, str(ref_len), str(nvar), f"{het:.6f}", str(nblocks), str(lbl)]

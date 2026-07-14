@@ -1,2 +1,4 @@
 sample,fastq_1,fastq_2,species,ploidy
 sample1,/Users/georgetiley/github/pate/tests/data/fastq/sample1_R1.fastq.gz,/Users/georgetiley/github/pate/tests/data/fastq/sample1_R2.fastq.gz,TestSpecies,4
+sample2,/Users/georgetiley/github/pate/tests/data/fastq/sample2_R1.fastq.gz,/Users/georgetiley/github/pate/tests/data/fastq/sample2_R2.fastq.gz,TestSpecies,2
+sample3,/Users/georgetiley/github/pate/tests/data/fastq/sample3_R1.fastq.gz,/Users/georgetiley/github/pate/tests/data/fastq/sample3_R2.fastq.gz,TestSpecies,4

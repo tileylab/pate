@@ -11,7 +11,7 @@ process BAMTOOLS_SPLIT {
     tuple val(meta), path(bam)
 
     output:
-    tuple val(meta), path("*.REF_*.bam"), emit: bams
+    tuple val(meta), path("*.REF_*.bam"), path("*.REF_*.bam.bai"), emit: bams
     tuple val("${task.process}"), val('samtools'), eval("samtools version | sed '1!d;s/.* //'"), topic: versions, emit: versions_bamtools
 
     when:
@@ -25,14 +25,18 @@ process BAMTOOLS_SPLIT {
         samtools index ${bam}
     fi
 
-    # Split BAM by reference contig (equivalent to bamtools split -reference)
+    # Split BAM by reference contig (equivalent to bamtools split -reference) and index each
+    # per-locus BAM in the same loop (H-PoPG needs the .bai for random access). Indexing here
+    # avoids a separate per-locus index job fan-out.
     for ref in \$(samtools idxstats ${bam} | cut -f1 | grep -v '^\\*'); do
-        samtools view -b ${bam} "\${ref}" > "${prefix}.REF_\${ref}.bam"
+        samtools view -b ${bam} "\${ref}" >| "${prefix}.REF_\${ref}.bam"
+        samtools index "${prefix}.REF_\${ref}.bam"
     done
     """
 
     stub:
     """
     touch ${meta.id}.REF_locus1.bam
+    touch ${meta.id}.REF_locus1.bam.bai
     """
 }
